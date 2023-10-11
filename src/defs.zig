@@ -10,8 +10,8 @@ pub const Map = struct {
     height: usize,
     width: usize,
 
-    fn isWallAtPosition(self: *Map, pos: *const Vec2) bool {
-        if (pos.x < 0 or pos.x >= self.width or pos.y < 0 or pos.y >= self.height) {
+    pub fn isWallAtPosition(self: *const Map, pos: *const Vec2) bool {
+        if (pos.x < 0 or pos.x >= @as(f64, @floatFromInt(self.width)) or pos.y < 0 or pos.y >= @as(f64, @floatFromInt(self.height))) {
             return false;
         }
         const idx: usize = @as(usize, @intFromFloat(pos.x)) + (@as(usize, @intFromFloat(pos.y)) * self.width);
@@ -19,6 +19,19 @@ pub const Map = struct {
             .None => false,
             .Basic => true,
         };
+    }
+
+    pub fn debugPrint(self: *const Map) void {
+        std.debug.print("// MAP", .{});
+        var row: usize = 0;
+        for (self.walls, 0..) |wall, i| {
+            if (i % self.width == 0) {
+                std.debug.print("\n{d}: ", .{row});
+                row += 1;
+            }
+            std.debug.print("{d}", .{@as(u8, @intFromEnum(wall))});
+        }
+        std.debug.print("\n", .{});
     }
 };
 
@@ -37,7 +50,7 @@ pub const Player = struct {
     pos: Vec2,
     dir: Vec2 = Vec2{ .x = 1, .y = 0 },
     rot: f64 = 0,
-    camera_plane_width: f64 = 2,
+    fov: f64 = std.math.degreesToRadians(f64, 100),
 
     fn updateDirection(self: *Player) void {
         self.dir.x = std.math.cos(self.rot);
@@ -45,7 +58,11 @@ pub const Player = struct {
     }
 
     pub fn rotate(self: *Player, rad: f64) void {
-        self.rot = @mod(self.rot + rad, std.math.pi);
+        self.rot = @mod(self.rot + rad, std.math.pi * 2);
         self.updateDirection();
+    }
+
+    pub fn debugPrint(self: *const Player) void {
+        std.debug.print("player: x{d} - y{d} | dir: x{d} - y{d}\n", .{ self.pos.x, self.pos.y, self.dir.x, self.dir.y });
     }
 };
