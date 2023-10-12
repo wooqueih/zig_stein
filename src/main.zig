@@ -13,8 +13,8 @@ var delta_time_ms: u32 = 1;
 var fdelta_time_ms: f64 = 1;
 
 const general_mem_size = 30_000;
-const walk_speed = 0.001;
-const look_speed = 0.002;
+const walk_speed = 0.005;
+const look_speed = 0.001;
 
 pub fn main() !void {
     var window: *c.SDL_Window = undefined;
@@ -49,6 +49,9 @@ pub fn main() !void {
         }
     }
 
+    map.walls[1 + map.width * 2] = .Basic;
+    map.walls[3 + map.width * 2] = .Basic;
+
     var player = defs.Player{
         .pos = defs.Vec2{ .x = 2, .y = 5 },
     };
@@ -61,14 +64,16 @@ pub fn main() !void {
         this_frame_time = c.SDL_GetTicks();
         delta_time_ms = this_frame_time - last_frame_time;
         fdelta_time_ms = @floatFromInt(delta_time_ms);
-        std.debug.print("\ndeltaTime (ms): {d} | FPS: {d}\n", .{ delta_time_ms, 1000.0 / fdelta_time_ms });
+
         running = try gameLoop(window, renderer, &player, &map, &pressed_keys_set);
     }
+
     c.SDL_Quit();
 }
 
 fn gameLoop(window: *c.SDL_Window, renderer: *c.SDL_Renderer, player: *defs.Player, map: *const defs.Map, pressed_keys_set: *std.AutoHashMap(c_int, void)) !bool {
     _ = window;
+    std.debug.print("deltaTime (ms): {d} | FPS: {d}\n\n\n", .{ delta_time_ms, 1000.0 / fdelta_time_ms });
     if (try pollInput(pressed_keys_set) == .Quit) {
         return false;
     }
@@ -116,7 +121,7 @@ const max_draw_distance: comptime_float = 10;
 const max_draw_distance_inverse: comptime_float = 1.0 / max_draw_distance;
 fn draw(renderer: *c.SDL_Renderer, player_in: *defs.Player, map: *const defs.Map) !void {
     var player = player_in.*;
-    if (c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) != 0) {
+    if (c.SDL_SetRenderDrawColor(renderer, 0, 0, 23, 255) != 0) {
         util.logSdlError();
         return error.SdlError;
     }
@@ -124,20 +129,39 @@ fn draw(renderer: *c.SDL_Renderer, player_in: *defs.Player, map: *const defs.Map
         util.logSdlError();
         return error.SdlError;
     }
+    player.fov = std.math.degreesToRadians(f64, 120);
 
     const half_screen_height = logical_screen_size.y * 0.5;
+    const plane_width = 1.0 / @fabs(std.math.tan(player.fov));
+    const orth_dir = defs.Vec2{
+        .x = -player.dir.y * plane_width,
+        .y = player.dir.x * plane_width,
+    };
+    player.pos = defs.Vec2{
+        .x = player.pos.x + orth_dir.x + player.dir.x,
+        .y = player.pos.y + orth_dir.y + player.dir.y,
+    };
+    const pos_step = defs.Vec2{
+        .x = -orth_dir.x / (logical_screen_size.x * 0.5),
+        .y = -orth_dir.y / (logical_screen_size.x * 0.5),
+    };
+    player.rotate(0.5 * player.fov);
     const rot_step = -player.fov / logical_screen_size.x;
-    player.rotate(player.fov * 0.5);
     for (0..@intFromFloat(std.math.round(logical_screen_size.x))) |i| {
+        defer player.pos.x += pos_step.x;
+        defer player.pos.y += pos_step.y;
         defer player.rotate(rot_step);
 
         //const prct = (@as(f64, @floatFromInt(i)) / logical_screen_size.x);
-        const inverse_distance: f64 = @min((1.0 / util.rayCast(&player, map, max_draw_distance)), 1.0);
-        const height: f64 = inverse_distance * half_screen_height;
+        const distance: f64 = util.rayCast(&player, map, max_draw_distance);
+        //const inverse_distance: f64 = 1.0 / distance;
+        const linear_distance: f64 = (max_draw_distance - distance) / max_draw_distance;
+
+        const height: f64 = linear_distance * half_screen_height;
 
         const clamped_height = std.math.clamp(height, -1 * half_screen_height, half_screen_height);
-        const brightness: u8 = @intFromFloat(@min(inverse_distance, 1.0) * 255);
-        if (c.SDL_SetRenderDrawColor(renderer, brightness, brightness / 2, 0, 255) != 0) {
+        const brightness: u8 = @intFromFloat(std.math.clamp(linear_distance, 0.0, 1.0) * 255);
+        if (c.SDL_SetRenderDrawColor(renderer, brightness, brightness / 2, 23, 255) != 0) {
             util.logSdlError();
             return error.SdlError;
         }
